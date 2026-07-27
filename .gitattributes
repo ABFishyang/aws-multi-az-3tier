@@ -1,0 +1,7 @@
+﻿# リポジトリ内は LF に統一する
+* text=auto eol=lf
+
+# バイナリファイルは変換しない
+*.png binary
+*.jpg binary
+*.pdf binary
