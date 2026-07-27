@@ -1,19 +1,26 @@
-﻿# 認証情報・鍵ファイル
+# 認証情報・鍵ファイル（絶対にコミットしない）
 *.pem
 *.key
 *.p12
 .env
+.env.*
 credentials
+config
 
-# 実環境用パラメータ
+# 実環境用パラメータ（機密値を含む可能性があるため除外）
 parameters/*-prod.json
-parameters/*-dev.json
+parameters/*-stg.json
 !parameters/example.json
+
+# AWS CLI / SAM
+.aws-sam/
+samconfig.toml
 
 # OS / エディタ
 .DS_Store
 Thumbs.db
 .vscode/
+.idea/
 *.swp
 
 # ログ・一時ファイル

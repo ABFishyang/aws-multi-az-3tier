@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Multi-AZ 3-Tier Architecture - 07 Database
+  DB サブネットグループ / RDS MySQL (Multi-AZ)
+
+# ------------------------------------------------------------------
+# 【設計方針・参考記事からの修正点】
+# 1. ManageMasterUserPassword: true を使う。
+#    RDS が Secrets Manager にシークレットを自動生成し、ローテーションまで管理する。
+#    テンプレート・Git・CloudFormation のイベント履歴のいずれにも
+#    パスワードが現れない。
+#    参考記事は SecretString にパスワードを平文で書いており、
+#    Secrets Manager を使う意味が失われていた。
+# 2. StorageEncrypted: true。作成後に変更するにはスナップショット経由の
+#    再作成が必要になるため、最初から入れる。
+# 3. EngineVersion はパラメータ化する。マイナーバージョンを固定すると
+#    サポート終了時に作成できなくなる（参考記事の 8.0.35 がこの状態）。
+# 4. DeletionProtection は学習環境では false。
+#    true にすると delete-stack が失敗して削除できず、課金が続く。
+# ------------------------------------------------------------------
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: myapp
+
+  DbInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    Description: 学習用途なら db.t3.micro
+
+  DbEngineVersion:
+    Type: String
+    Default: '8.0'
+    Description: メジャーバージョンのみ指定するとマイナーは自動選択される
+
+  DbAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 100
+
+  DbName:
+    Type: String
+    Default: appdb
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9]*$'
+
+  DbMasterUsername:
+    Type: String
+    Default: dbadmin
+    AllowedPattern: '^[a-zA-Z][a-zA-Z0-9_]*$'
+    Description: admin は予約語のため避ける
+
+  MultiAz:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 費用を抑えたい場合は false
+
+  BackupRetentionPeriod:
+    Type: Number
+    Default: 7
+    MinValue: 0
+    MaxValue: 35
+
+  DeletionProtection:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  IsMultiAz: !Equals [!Ref MultiAz, 'true']
+  IsDeletionProtected: !Equals [!Ref DeletionProtection, 'true']
+
+Resources:
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS in protected subnets
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-ProtectedSubnetAId'
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-ProtectedSubnetBId'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-db-subnet-group'
+
+  DbParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Parameter group for MySQL
+      Family: mysql8.0
+      Parameters:
+        character_set_server: utf8mb4
+        collation_server: utf8mb4_unicode_ci
+        time_zone: Asia/Tokyo
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-db-pg'
+
+  DbInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-mysql'
+      Engine: mysql
+      EngineVersion: !Ref DbEngineVersion
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: !Ref DbName
+      MasterUsername: !Ref DbMasterUsername
+      # パスワードは RDS が生成し Secrets Manager で管理する
+      ManageMasterUserPassword: true
+      MultiAZ: !If [IsMultiAz, true, false]
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      DBParameterGroupName: !Ref DbParameterGroup
+      VPCSecurityGroups:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-RdsSgId'
+      BackupRetentionPeriod: !Ref BackupRetentionPeriod
+      PreferredBackupWindow: '17:00-18:00'
+      PreferredMaintenanceWindow: 'sun:18:00-sun:19:00'
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: !If [IsDeletionProtected, true, false]
+      EnableCloudwatchLogsExports:
+        - error
+        - slowquery
+      CopyTagsToSnapshot: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-mysql'
+
+Outputs:
+  DbEndpointAddress:
+    Value: !GetAtt DbInstance.Endpoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-DbEndpointAddress'
+  DbEndpointPort:
+    Value: !GetAtt DbInstance.Endpoint.Port
+    Export:
+      Name: !Sub '${ProjectName}-DbEndpointPort'
+  DbName:
+    Value: !Ref DbName
+    Export:
+      Name: !Sub '${ProjectName}-DbName'
+  DbSecretArn:
+    Value: !GetAtt DbInstance.MasterUserSecret.SecretArn
+    Export:
+      Name: !Sub '${ProjectName}-DbSecretArn'

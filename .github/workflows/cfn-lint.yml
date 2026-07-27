@@ -1,0 +1,33 @@
+name: cfn-lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cfn-lint
+        run: pip install cfn-lint
+
+      - name: Run cfn-lint
+        run: cfn-lint templates/*.yaml
+
+      - name: Check for full-width spaces (U+3000)
+        run: |
+          if grep -rP '\x{3000}' templates/ ; then
+            echo "::error::全角スペース (U+3000) が含まれています"
+            exit 1
+          fi
+          echo "OK: 全角スペースは含まれていません"
