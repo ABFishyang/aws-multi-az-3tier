@@ -1,28 +1,18 @@
-# 認証情報・鍵ファイル（絶対にコミットしない）
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+tfplan
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
 *.pem
 *.key
-*.p12
-.env
-.env.*
-credentials
-config
-
-# 実環境用パラメータ（機密値を含む可能性があるため除外）
-parameters/*-prod.json
-parameters/*-stg.json
-!parameters/example.json
-
-# AWS CLI / SAM
-.aws-sam/
-samconfig.toml
-
-# OS / エディタ
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.swp
-
-# ログ・一時ファイル
-*.log
-tmp/

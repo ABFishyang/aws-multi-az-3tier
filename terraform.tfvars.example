@@ -1,0 +1,16 @@
+# Copy this file to terraform.tfvars and fill in the required values.
+# Never commit terraform.tfvars.
+
+# ---------- 必須 ----------
+notification_email = "you@example.com" # CloudWatchアラーム・AWS Health通知の送信先
+
+# ---------- カスタムドメイン（任意）----------
+# 両方とも空文字列のままなら、ALBのDNS名 + HTTPのみで構築される。
+# 独自ドメインを使う場合は両方を設定すること。
+domain_name    = ""
+hosted_zone_id = ""
+
+# ---------- 費用を抑えたい場合の調整例 ----------
+# db_multi_az             = false  # 約$15/月削減
+# db_instance_class       = "db.t3.micro"
+# enable_detailed_monitoring = false

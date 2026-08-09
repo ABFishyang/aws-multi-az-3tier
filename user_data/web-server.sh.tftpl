@@ -1,0 +1,77 @@
+#!/bin/bash
+set -euxo pipefail
+
+EFS_ID="${efs_id}"
+DB_HOST="${db_host}"
+DB_NAME="${db_name}"
+SECRET_ARN="${secret_arn}"
+REGION="${region}"
+
+# ---------- パッケージ ----------
+dnf update -y
+dnf install -y httpd php php-mysqlnd amazon-efs-utils jq
+
+# ---------- EFS を TLS マウント ----------
+mkdir -p /mnt/efs
+mount -t efs -o tls,iam "$EFS_ID":/ /mnt/efs
+# nofail を付けないと EFS 到達不可時に起動が止まる
+echo "$EFS_ID:/ /mnt/efs efs _netdev,tls,iam,nofail 0 0" >> /etc/fstab
+
+# ---------- Secrets Manager から DB 認証情報を取得 ----------
+SECRET_JSON=$(aws secretsmanager get-secret-value \
+  --secret-id "$SECRET_ARN" \
+  --query SecretString --output text --region "$REGION")
+DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
+DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
+
+# ---------- アプリ設定（root のみ読み取り可）----------
+install -d -m 0750 -o root -g apache /etc/app
+cat > /etc/app/db.php << 'PHPEOF'
+<?php
+$dsn  = 'mysql:host=' . getenv('DB_HOST') . ';dbname=' . getenv('DB_NAME') . ';charset=utf8mb4';
+$user = getenv('DB_USER');
+$pass = getenv('DB_PASS');
+PHPEOF
+chmod 0640 /etc/app/db.php
+chown root:apache /etc/app/db.php
+
+# 環境変数は systemd の drop-in で httpd にだけ渡す
+mkdir -p /etc/systemd/system/httpd.service.d
+cat > /etc/systemd/system/httpd.service.d/env.conf << ENVEOF
+[Service]
+Environment="DB_HOST=$DB_HOST"
+Environment="DB_NAME=$DB_NAME"
+Environment="DB_USER=$DB_USER"
+Environment="DB_PASS=$DB_PASS"
+ENVEOF
+chmod 0600 /etc/systemd/system/httpd.service.d/env.conf
+
+# ---------- ヘルスチェック用ファイル ----------
+# ALB の HealthCheckPath は URL パス。DocumentRoot 直下に置くこと。
+cat > /var/www/html/healthcheck.php << 'HCEOF'
+<?php
+http_response_code(200);
+echo "OK";
+HCEOF
+
+# ---------- 動作確認用ページ（AZ表示込み。以前のCFN版はB側でこのロジックが
+# コピペ漏れしていたが、Terraform版はモジュールを1つにしたため発生し得ない）----------
+cat > /var/www/html/index.php << 'IDXEOF'
+<?php
+echo "<h1>Hello from " . gethostname() . "</h1>";
+echo "<p>AZ: " . file_get_contents(
+  "http://169.254.169.254/latest/meta-data/placement/availability-zone",
+  false,
+  stream_context_create(["http" => ["header" => "X-aws-ec2-metadata-token: " .
+    file_get_contents("http://169.254.169.254/latest/api/token", false,
+      stream_context_create(["http" => ["method" => "PUT",
+        "header" => "X-aws-ec2-metadata-token-ttl-seconds: 60"]]))]])
+) . "</p>";
+IDXEOF
+
+# ---------- 共有コンテンツ用ディレクトリ ----------
+mkdir -p /mnt/efs/shared
+chown -R apache:apache /mnt/efs/shared
+
+systemctl daemon-reload
+systemctl enable --now httpd
