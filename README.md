@@ -2,7 +2,7 @@
 
 AWS 上にマルチAZ構成の3層Webアーキテクチャを Terraform で構築した個人学習プロジェクトです。可用性・セキュリティ・運用監視・バックアップまでを含む構成を、12モジュールで実装しています。
 
-このリポジトリは、同じアーキテクチャを CloudFormation で実装した [aws-multi-az-3tier](https://github.com/ABFishyang/aws-multi-az-3tier) の姉妹版です。**同一の構成を2つのIaCツールで実装し比較検証すること自体が本プロジェクトの目的の一つ**であり、両者の設計上の違いは後述の「CloudFormation版との違い」にまとめています。
+このリポジトリでは、以前 CloudFormation で実装していた同一アーキテクチャを Terraform で再構築しました。CloudFormation 版は [Git履歴（旧版）](https://github.com/ABFishyang/aws-multi-az-3tier/tree/9982b291471f4a8efdeef565ae11d0031c7fbd30) から確認できます。**同一構成を2つのIaCツールで実装して比較検証すること自体が本プロジェクトの目的の一つ**であり、両者の設計上の違いは後述の「CloudFormation版との違い」にまとめています。
 
 ---
 
@@ -115,7 +115,7 @@ Privateサブネットのルートテーブルを1つにまとめると片方の
 
 ## 参考にした記事
 
-本プロジェクトのアーキテクチャは、姉妹版であるCloudFormation版 [aws-multi-az-3tier](https://github.com/ABFishyang/aws-multi-az-3tier) と同一の設計を踏襲している。CloudFormation版の実装にあたって参考にした記事や、そこで見つかった問題点の詳細は同リポジトリの `docs/code-review.md` を参照。
+本プロジェクトのアーキテクチャは、[CloudFormation旧版](https://github.com/ABFishyang/aws-multi-az-3tier/tree/9982b291471f4a8efdeef565ae11d0031c7fbd30) と同一の設計を踏襲している。CloudFormation版の実装にあたって参考にした記事や、そこで見つかった問題点の詳細は、旧版の [`docs/code-review.md`](https://github.com/ABFishyang/aws-multi-az-3tier/blob/9982b291471f4a8efdeef565ae11d0031c7fbd30/docs/code-review.md) を参照。
 
 ---
 
@@ -125,7 +125,7 @@ Privateサブネットのルートテーブルを1つにまとめると片方の
 
 - Terraform 1.10 以降
 - AWS CLI v2（`aws sts get-caller-identity` で現在のIDを確認しておく）
-- CloudFormation版と同等のAWS操作権限
+- 構築対象リソースの作成に必要なAWS操作権限
 
 ### 設定
 
