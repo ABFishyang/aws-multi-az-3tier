@@ -148,7 +148,7 @@ make destroy
 
 ---
 
-## Linting & documentation
+## 静的解析とドキュメント
 
 [tflint](https://github.com/terraform-linters/tflint)（`aws` ruleset）と [terraform-docs](https://github.com/terraform-docs/terraform-docs) を使用。CI（`.github/workflows/terraform.yml`）で `validate` / `lint` / `docs`（ドキュメント同期チェック）の3ジョブが自動実行される。
 
@@ -158,7 +158,7 @@ make lint        # 静的解析
 make docs        # modules/*/README.md とこのファイルの表を再生成
 ```
 
-**Windows note:** vanilla Git Bash doesn't ship `make`. Install it (`choco install make` / `scoop install make`), or run the underlying `tflint` / `terraform-docs` commands directly.
+**Windows向け補足:** 標準のGit Bashには `make` が含まれていません。`choco install make` または `scoop install make` で導入するか、`tflint` / `terraform-docs` を直接実行してください。
 
 ---
 
@@ -219,7 +219,7 @@ make docs        # modules/*/README.md とこのファイルの表を再生成
 
 ---
 
-## Reference
+## Terraformリファレンス
 
 各モジュールの詳細な入出力は `modules/<name>/README.md` を参照（`terraform-docs` で自動生成、`make docs` で更新可能）。
 
@@ -313,6 +313,6 @@ make docs        # modules/*/README.md とこのファイルの表を再生成
 | <a name="output_web_instance_ids"></a> [web\_instance\_ids](#output\_web\_instance\_ids) | Map of Web/App EC2 instance IDs (a, b) |
 <!-- END_TF_DOCS -->
 
-## License
+## ライセンス
 
 MIT License. See [LICENSE](LICENSE).
