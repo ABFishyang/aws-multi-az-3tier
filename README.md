@@ -1,23 +1,26 @@
-# AWS マルチAZ 3層Webアーキテクチャ基盤（Terraform 版）
+# AWS マルチAZ 3層Webアーキテクチャ基盤
 
-AWS 上にマルチAZ構成の3層Webアーキテクチャを Terraform で構築した個人学習プロジェクトです。可用性・セキュリティ・運用監視・バックアップまでを含む構成を、12モジュールで実装しています。
+[![Terraform CI](https://github.com/ABFishyang/aws-multi-az-3tier/actions/workflows/terraform.yml/badge.svg)](https://github.com/ABFishyang/aws-multi-az-3tier/actions/workflows/terraform.yml)
 
-このリポジトリでは、以前 CloudFormation で実装していた同一アーキテクチャを Terraform で再構築しました。CloudFormation 版は [Git履歴（旧版）](https://github.com/ABFishyang/aws-multi-az-3tier/tree/9982b291471f4a8efdeef565ae11d0031c7fbd30) から確認できます。**同一構成を2つのIaCツールで実装して比較検証すること自体が本プロジェクトの目的の一つ**であり、両者の設計上の違いは後述の「CloudFormation版との違い」にまとめています。
+AWS 上のマルチAZ 3層Webアーキテクチャを Terraform でコード化した個人学習プロジェクトです。可用性・セキュリティ・運用監視・バックアップまでを12モジュールに分割しています。
+
+> 現在の検証範囲は `terraform fmt`、`terraform validate`、TFLint、terraform-docs のCI実行までです。実AWS環境への `terraform plan` / `apply` は未実施です。
 
 ---
 
 ## 構成図
 
-```text
-VPC 10.0.0.0/16
-├── ap-northeast-1a
-│   ├── public-a     10.0.0.0/24   (ALB, NAT Gateway A)
-│   ├── private-a    10.0.10.0/24  (Web/App EC2 A)
-│   └── protected-a  10.0.20.0/24  (RDS, EFS mount target A) ※デフォルトルート無し
-└── ap-northeast-1c
-    ├── public-b     10.0.1.0/24   (ALB, NAT Gateway B)
-    ├── private-b    10.0.11.0/24  (Web/App EC2 B)
-    └── protected-b  10.0.21.0/24  (RDS, EFS mount target B) ※デフォルトルート無し
+```mermaid
+flowchart TB
+    Internet((Internet)) --> ALB[Application Load Balancer]
+    ALB --> EC2A[Web/App EC2<br/>private-a]
+    ALB --> EC2C[Web/App EC2<br/>private-c]
+    EC2A --> RDS[(RDS MySQL<br/>Multi-AZ)]
+    EC2C --> RDS
+    EC2A --> EFS[(Amazon EFS)]
+    EC2C --> EFS
+    EC2A -. metrics / logs .-> CW[CloudWatch / SNS]
+    EC2C -. metrics / logs .-> CW
 ```
 
 - Public: ALBとNATゲートウェイのみ。EC2は置かない
@@ -27,57 +30,22 @@ VPC 10.0.0.0/16
 
 ---
 
-## モジュール構成（CloudFormationスタックとの対応）
+## モジュール構成
 
-| # | モジュール | 対応するCFNスタック | 主なリソース | 依存 |
-|---|---|---|---|---|
-| 01 | `network` | 01-network | VPC / IGW / Subnet×6 / NATGW×2 / RouteTable×4 / NACL×3 | — |
-| 02 | `security` | 02-securitygroup | SecurityGroup×5（ALB / EC2 / RDS / EFS / VPCE） | network |
-| 03 | `iam` | 03-iam | EC2ロール / インスタンスプロファイル / AWS Backupロール | — |
-| 04 | `endpoints` | 04-endpoint | SSM Interfaceエンドポイント×3 / S3 Gatewayエンドポイント | network, security |
-| 05 | `logging` | 05-logging | ログ用S3バケット / バケットポリシー / VPCフローログ | network |
-| 06 | `storage` | 06-storage | EFS / マウントターゲット×2 | network, security |
-| 07 | `database` | 07-database | DBサブネットグループ / パラメータグループ / RDS MySQL | network, security |
-| 08 | `compute` | 08-compute | EC2×2（Web/App） | network, security, iam, storage, database |
-| 09 | `dns` | 10-dns（一部） | ACM証明書 / DNS検証（**ALBに依存しない**） | — |
-| 09 | `loadbalancer` | 09-loadbalancer | ALB / ターゲットグループ / リスナー | network, security, compute, dns, logging |
-| — | `aws_route53_record.alias`（ルート直書き） | 10-dns（一部） | ALBを指すエイリアスレコード | dns, loadbalancer |
-| 11 | `monitoring` | 11-monitoring | SNS / TopicPolicy / CloudWatchアラーム×6 / EventBridge | compute, database, loadbalancer |
-| 12 | `backup` | 12-backup | Backupボールト / プラン / セレクション | iam, database |
-
-Terraformは単一の依存グラフで解決するため、CloudFormation版にあった「05-loggingを09-loadbalancerより先にデプロイする」といったスタック順序の制約は、モジュール間の暗黙・明示の依存関係として自動的に表現される。`terraform apply` は基本的に1回で完結する。
-
----
-
-## CloudFormation版との違い
-
-### 1. カスタムドメインの循環依存を構造的に解消
-
-CloudFormation版は、09-loadbalancer（証明書ARNが要る）と10-dns（ALBのDNS名が要る）が相互依存になり、
-
-1. 証明書無しで 01〜09 をデプロイ
-2. 10-dns をデプロイして証明書ARNを取得
-3. 証明書ARNを渡して 09 を再デプロイ
-
-という2段階デプロイが必要だった。
-
-Terraform版では `dns` モジュールを「証明書の発行・検証のみ」に絞り、ALBへの依存を一切持たせていない。ALBを指すRoute53エイリアスレコードは、証明書とALB両方に依存する最後の1リソースとしてルートの `main.tf` に直書きしている。これにより `dns → loadbalancer → alias` という一方向の依存関係になり、`terraform apply` 一回で完結する。
-
-（`dns`モジュールと`loadbalancer`モジュールを相互参照させる素朴な実装だと、Terraformの依存グラフが真に循環し `Error: Cycle` でplanが失敗する。これは「単一のapplyで解決する」というTerraformの性質だけでは自動的に解けない問題で、モジュール境界の切り方そのものを変える必要があった。）
-
-### 2. セキュリティグループの既定挙動の違い
-
-CloudFormation版はRDS/EFS/VPCエンドポイント用のSGに「アウトバウンド不要」を表現するため、`127.0.0.1/32` へのダミーegressルールを明示的に追加していた（`SecurityGroupEgress`を空リストにする代替手段）。
-
-Terraformの `aws_security_group` は、inlineの `ingress`/`egress` ブロックを一切書かない場合でも、AWSが新規SG作成時に自動付与する「全許可アウトバウンド」ルールを既定で除去する。そのためTerraform版ではダミールールが不要で、単純に何も書かないだけで意図した「アウトバウンド不要」が実現できる。
-
-### 3. EC2 2台構成の重複排除
-
-CloudFormation版は素のYAMLでは2台分をほぼ手書きコピーする必要があり、後から `Fn::ForEach`（`AWS::LanguageExtensions`）で重複を解消した。Terraform版は最初から `for_each` で1つのリソース定義から2台を生成しており、この種の重複が構造的に発生しない。
-
-### 4. RDS削除時の挙動
-
-CloudFormation版の `DeletionPolicy: Snapshot` に相当する設定として、`skip_final_snapshot = false` を明示している。`deletion_protection`（destroy自体を拒否する設定）とは独立した設定であることに注意（両者を混同すると、意図せず最終スナップショットを残さずに削除してしまう設計ミスになりうる）。
+| モジュール | 主なリソース | 依存 |
+|---|---|---|
+| `network` | VPC / Subnet×6 / NAT Gateway×2 / Route Table / NACL | — |
+| `security` | ALB / EC2 / RDS / EFS / VPC Endpoint用SG | network |
+| `iam` | EC2・AWS Backupロール | — |
+| `endpoints` | SSM Interface×3 / S3 Gateway Endpoint | network, security |
+| `logging` | S3 / VPC Flow Logs | network |
+| `storage` | EFS / Mount Target×2 | network, security |
+| `database` | RDS MySQL / DB Subnet Group | network, security |
+| `compute` | Web/App EC2×2 | network, security, iam, storage, database |
+| `dns` | ACM証明書 / DNS検証 | — |
+| `loadbalancer` | ALB / Target Group / Listener | network, security, compute, dns, logging |
+| `monitoring` | SNS / CloudWatch Alarm / EventBridge | compute, database, loadbalancer |
+| `backup` | Backup Vault / Plan / Selection | iam, database |
 
 ---
 
@@ -110,12 +78,6 @@ Privateサブネットのルートテーブルを1つにまとめると片方の
 ### IAMロールのEFS権限を最小化
 
 `elasticfilesystem:ClientRootAccess`（UID/GID強制を素通りする権限）は付与せず、`ClientMount`/`ClientWrite`のみに限定。Resourceもアカウント/リージョン内のEFSに限定している。
-
----
-
-## 参考にした記事
-
-本プロジェクトのアーキテクチャは、[CloudFormation旧版](https://github.com/ABFishyang/aws-multi-az-3tier/tree/9982b291471f4a8efdeef565ae11d0031c7fbd30) と同一の設計を踏襲している。CloudFormation版の実装にあたって参考にした記事や、そこで見つかった問題点の詳細は、旧版の [`docs/code-review.md`](https://github.com/ABFishyang/aws-multi-az-3tier/blob/9982b291471f4a8efdeef565ae11d0031c7fbd30/docs/code-review.md) を参照。
 
 ---
 
@@ -170,7 +132,7 @@ make destroy
 
 ## 費用の目安（東京リージョン、概算・月額）
 
-同一アーキテクチャのため、CloudFormation版と同水準。
+以下は各サービスの一般的な料金を基にした学習用途の概算です。実際の金額は利用時間・データ転送量・料金改定により変動します。
 
 | リソース | 月額 |
 |---|---|
