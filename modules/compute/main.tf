@@ -24,26 +24,26 @@ locals {
 resource "aws_instance" "web" {
   for_each = local.web_servers
 
-  ami                     = data.aws_ssm_parameter.al2023_ami.insecure_value
-  instance_type            = var.instance_type
-  subnet_id                = each.value.subnet_id
-  vpc_security_group_ids    = [var.ec2_security_group_id]
-  iam_instance_profile      = var.iam_instance_profile_name
-  monitoring                = var.enable_detailed_monitoring
-  user_data                 = base64encode(var.user_data)
+  ami                         = data.aws_ssm_parameter.al2023_ami.insecure_value
+  instance_type               = var.instance_type
+  subnet_id                   = each.value.subnet_id
+  vpc_security_group_ids      = [var.ec2_security_group_id]
+  iam_instance_profile        = var.iam_instance_profile_name
+  monitoring                  = var.enable_detailed_monitoring
+  user_data                   = base64encode(var.user_data)
   user_data_replace_on_change = true
 
   metadata_options {
     http_endpoint               = "enabled"
-    http_tokens                  = "required"
-    http_put_response_hop_limit  = 1
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 
   root_block_device {
-    volume_type            = "gp3"
-    volume_size             = var.root_volume_size
-    encrypted                = true
-    delete_on_termination    = true
+    volume_type           = "gp3"
+    volume_size           = var.root_volume_size
+    encrypted             = true
+    delete_on_termination = true
   }
 
   # AMIの更新だけで既存インスタンスが意図せず再作成されないようにする

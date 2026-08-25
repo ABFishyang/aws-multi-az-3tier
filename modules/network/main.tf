@@ -56,7 +56,7 @@ resource "aws_subnet" "public" {
 
   vpc_id                  = aws_vpc.main.id
   availability_zone       = each.value.az
-  cidr_block               = each.value.cidr
+  cidr_block              = each.value.cidr
   map_public_ip_on_launch = false # ALB/NATのみ配置。EC2は置かない
 
   tags = { Name = "${var.project_name}-public-${each.key}", Tier = "public" }
@@ -65,9 +65,9 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   for_each = local.private_subnets
 
-  vpc_id             = aws_vpc.main.id
-  availability_zone   = each.value.az
-  cidr_block          = each.value.cidr
+  vpc_id            = aws_vpc.main.id
+  availability_zone = each.value.az
+  cidr_block        = each.value.cidr
 
   tags = { Name = "${var.project_name}-private-${each.key}", Tier = "private" }
 }
@@ -75,9 +75,9 @@ resource "aws_subnet" "private" {
 resource "aws_subnet" "protected" {
   for_each = local.protected_subnets
 
-  vpc_id             = aws_vpc.main.id
-  availability_zone   = each.value.az
-  cidr_block          = each.value.cidr
+  vpc_id            = aws_vpc.main.id
+  availability_zone = each.value.az
+  cidr_block        = each.value.cidr
 
   tags = { Name = "${var.project_name}-protected-${each.key}", Tier = "protected" }
 }
@@ -116,7 +116,7 @@ resource "aws_route_table" "public" {
 resource "aws_route" "public_internet" {
   route_table_id         = aws_route_table.public.id
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id              = aws_internet_gateway.main.id
+  gateway_id             = aws_internet_gateway.main.id
 }
 
 resource "aws_route_table_association" "public" {
@@ -138,7 +138,7 @@ resource "aws_route" "private_internet" {
 
   route_table_id         = aws_route_table.private[each.key].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id          = aws_nat_gateway.main[each.key].id
+  nat_gateway_id         = aws_nat_gateway.main[each.key].id
 }
 
 resource "aws_route_table_association" "private" {
@@ -178,9 +178,9 @@ resource "aws_network_acl_rule" "public_in_https" {
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = "0.0.0.0/0"
-  from_port       = 443
-  to_port         = 443
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 443
+  to_port        = 443
 }
 
 resource "aws_network_acl_rule" "public_in_http" {
@@ -189,9 +189,9 @@ resource "aws_network_acl_rule" "public_in_http" {
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = "0.0.0.0/0"
-  from_port       = 80
-  to_port         = 80
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 80
+  to_port        = 80
 }
 
 resource "aws_network_acl_rule" "public_in_ephemeral" {
@@ -200,9 +200,9 @@ resource "aws_network_acl_rule" "public_in_ephemeral" {
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = "0.0.0.0/0"
-  from_port       = 1024
-  to_port         = 65535
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 1024
+  to_port        = 65535
 }
 
 resource "aws_network_acl_rule" "public_out_all" {
@@ -211,7 +211,7 @@ resource "aws_network_acl_rule" "public_out_all" {
   egress         = true
   protocol       = "-1"
   rule_action    = "allow"
-  cidr_block      = "0.0.0.0/0"
+  cidr_block     = "0.0.0.0/0"
 }
 
 # ==================================================================
@@ -230,7 +230,7 @@ resource "aws_network_acl_rule" "private_in_vpc" {
   egress         = false
   protocol       = "-1"
   rule_action    = "allow"
-  cidr_block      = var.vpc_cidr
+  cidr_block     = var.vpc_cidr
 }
 
 resource "aws_network_acl_rule" "private_in_ephemeral" {
@@ -239,9 +239,9 @@ resource "aws_network_acl_rule" "private_in_ephemeral" {
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = "0.0.0.0/0"
-  from_port       = 1024
-  to_port         = 65535
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 1024
+  to_port        = 65535
 }
 
 resource "aws_network_acl_rule" "private_out_all" {
@@ -250,7 +250,7 @@ resource "aws_network_acl_rule" "private_out_all" {
   egress         = true
   protocol       = "-1"
   rule_action    = "allow"
-  cidr_block      = "0.0.0.0/0"
+  cidr_block     = "0.0.0.0/0"
 }
 
 # ==================================================================
@@ -269,9 +269,9 @@ resource "aws_network_acl_rule" "protected_in_mysql" {
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = var.vpc_cidr
-  from_port       = 3306
-  to_port         = 3306
+  cidr_block     = var.vpc_cidr
+  from_port      = 3306
+  to_port        = 3306
 }
 
 resource "aws_network_acl_rule" "protected_in_nfs" {
@@ -280,9 +280,9 @@ resource "aws_network_acl_rule" "protected_in_nfs" {
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = var.vpc_cidr
-  from_port       = 2049
-  to_port         = 2049
+  cidr_block     = var.vpc_cidr
+  from_port      = 2049
+  to_port        = 2049
 }
 
 resource "aws_network_acl_rule" "protected_in_ephemeral" {
@@ -291,9 +291,9 @@ resource "aws_network_acl_rule" "protected_in_ephemeral" {
   egress         = false
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = var.vpc_cidr
-  from_port       = 1024
-  to_port         = 65535
+  cidr_block     = var.vpc_cidr
+  from_port      = 1024
+  to_port        = 65535
 }
 
 resource "aws_network_acl_rule" "protected_out_ephemeral" {
@@ -302,9 +302,9 @@ resource "aws_network_acl_rule" "protected_out_ephemeral" {
   egress         = true
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = var.vpc_cidr
-  from_port       = 1024
-  to_port         = 65535
+  cidr_block     = var.vpc_cidr
+  from_port      = 1024
+  to_port        = 65535
 }
 
 resource "aws_network_acl_rule" "protected_out_mysql" {
@@ -313,9 +313,9 @@ resource "aws_network_acl_rule" "protected_out_mysql" {
   egress         = true
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = var.vpc_cidr
-  from_port       = 3306
-  to_port         = 3306
+  cidr_block     = var.vpc_cidr
+  from_port      = 3306
+  to_port        = 3306
 }
 
 resource "aws_network_acl_rule" "protected_out_nfs" {
@@ -324,7 +324,7 @@ resource "aws_network_acl_rule" "protected_out_nfs" {
   egress         = true
   protocol       = "tcp"
   rule_action    = "allow"
-  cidr_block      = var.vpc_cidr
-  from_port       = 2049
-  to_port         = 2049
+  cidr_block     = var.vpc_cidr
+  from_port      = 2049
+  to_port        = 2049
 }
