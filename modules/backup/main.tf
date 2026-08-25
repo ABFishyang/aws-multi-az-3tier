@@ -26,12 +26,12 @@ resource "aws_backup_plan" "daily" {
   name = "${var.project_name}-daily-plan"
 
   rule {
-    rule_name           = "DailyBackup"
-    target_vault_name    = aws_backup_vault.main.name
-    schedule              = var.backup_schedule
+    rule_name                    = "DailyBackup"
+    target_vault_name            = aws_backup_vault.main.name
+    schedule                     = var.backup_schedule
     schedule_expression_timezone = "Asia/Tokyo"
-    start_window          = 60
-    completion_window     = 180
+    start_window                 = 60
+    completion_window            = 180
 
     lifecycle {
       delete_after = var.delete_after_days
@@ -45,15 +45,15 @@ resource "aws_backup_plan" "daily" {
 
 resource "aws_backup_selection" "tagged" {
   name         = "${var.project_name}-tagged-resources"
-  plan_id       = aws_backup_plan.daily.id
-  iam_role_arn  = var.backup_role_arn
+  plan_id      = aws_backup_plan.daily.id
+  iam_role_arn = var.backup_role_arn
 
   # EC2はタグで、RDSはARNで明示的に対象にする（AWS BackupのSelectionでは
   # selection_tag と resources は OR で結合される）
   selection_tag {
     type  = "STRINGEQUALS"
-    key    = "Backup"
-    value  = "true"
+    key   = "Backup"
+    value = "true"
   }
 
   resources = [var.db_instance_arn]

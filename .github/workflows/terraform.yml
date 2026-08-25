@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.15.6"
 
@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up TFLint
         uses: terraform-linters/setup-tflint@v6
@@ -57,13 +57,13 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up terraform-docs
         run: |
           curl -sSL -o terraform-docs.tar.gz \
             https://github.com/terraform-docs/terraform-docs/releases/download/v0.24.0/terraform-docs-v0.24.0-linux-amd64.tar.gz
-          tar -xzf terraform-docs.tar.gz
+          tar -xzf terraform-docs.tar.gz terraform-docs
           chmod +x terraform-docs
           sudo mv terraform-docs /usr/local/bin/terraform-docs
 

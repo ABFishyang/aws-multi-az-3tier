@@ -142,12 +142,12 @@ resource "aws_flow_log" "vpc" {
   # バケットポリシーが先に存在しないと配信設定の検証に失敗する
   depends_on = [aws_s3_bucket_policy.logs]
 
-  vpc_id                   = var.vpc_id
-  traffic_type              = "ALL"
-  log_destination_type      = "s3"
+  vpc_id               = var.vpc_id
+  traffic_type         = "ALL"
+  log_destination_type = "s3"
   # ポリシーで許可したパスと必ず一致させること
-  log_destination           = "${aws_s3_bucket.logs.arn}/${var.flow_log_prefix}/"
-  max_aggregation_interval  = 600
+  log_destination          = "${aws_s3_bucket.logs.arn}/${var.flow_log_prefix}/"
+  max_aggregation_interval = 600
 
   tags = { Name = "${var.project_name}-vpc-flowlog" }
 }

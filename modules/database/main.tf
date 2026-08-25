@@ -42,10 +42,10 @@ resource "aws_db_parameter_group" "main" {
 }
 
 resource "aws_db_instance" "main" {
-  identifier     = "${var.project_name}-mysql"
-  engine          = "mysql"
-  engine_version   = var.engine_version
-  instance_class   = var.instance_class
+  identifier        = "${var.project_name}-mysql"
+  engine            = "mysql"
+  engine_version    = var.engine_version
+  instance_class    = var.instance_class
   allocated_storage = var.allocated_storage
   storage_type      = "gp3"
   storage_encrypted = true
@@ -55,25 +55,25 @@ resource "aws_db_instance" "main" {
   # パスワードは RDS が生成し Secrets Manager で管理する
   manage_master_user_password = true
 
-  multi_az             = var.multi_az
-  publicly_accessible   = false
-  db_subnet_group_name  = aws_db_subnet_group.main.name
-  parameter_group_name  = aws_db_parameter_group.main.name
+  multi_az               = var.multi_az
+  publicly_accessible    = false
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  parameter_group_name   = aws_db_parameter_group.main.name
   vpc_security_group_ids = [var.rds_security_group_id]
 
-  backup_retention_period   = var.backup_retention_period
-  backup_window               = "17:00-18:00"
-  maintenance_window          = "sun:18:00-sun:19:00"
-  auto_minor_version_upgrade  = true
-  deletion_protection         = var.deletion_protection
+  backup_retention_period         = var.backup_retention_period
+  backup_window                   = "17:00-18:00"
+  maintenance_window              = "sun:18:00-sun:19:00"
+  auto_minor_version_upgrade      = true
+  deletion_protection             = var.deletion_protection
   enabled_cloudwatch_logs_exports = ["error", "slowquery"]
-  copy_tags_to_snapshot        = true
+  copy_tags_to_snapshot           = true
 
   # CloudFormation版の DeletionPolicy: Snapshot に相当。deletion_protection
   # とは独立した設定で、destroy時は常に最終スナップショットを残す。
   # 同名スナップショットの衝突を避けたい場合は識別子にサフィックスを足すこと。
-  skip_final_snapshot        = false
-  final_snapshot_identifier  = "${var.project_name}-mysql-final"
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "${var.project_name}-mysql-final"
 
   tags = { Name = "${var.project_name}-mysql" }
 }

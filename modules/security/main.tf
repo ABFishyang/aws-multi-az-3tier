@@ -21,20 +21,20 @@ resource "aws_security_group" "alb" {
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
   security_group_id = aws_security_group.alb.id
-  description        = "HTTP from Internet (redirected to HTTPS when a certificate is configured)"
-  cidr_ipv4          = "0.0.0.0/0"
-  ip_protocol         = "tcp"
-  from_port           = 80
-  to_port             = 80
+  description       = "HTTP from Internet (redirected to HTTPS when a certificate is configured)"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_https" {
   security_group_id = aws_security_group.alb.id
-  description        = "HTTPS from Internet"
-  cidr_ipv4          = "0.0.0.0/0"
-  ip_protocol         = "tcp"
-  from_port           = 443
-  to_port             = 443
+  description       = "HTTPS from Internet"
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
 }
 
 # ---------- EC2 用 ----------
@@ -48,20 +48,20 @@ resource "aws_security_group" "ec2" {
 
 resource "aws_vpc_security_group_ingress_rule" "alb_to_ec2" {
   security_group_id            = aws_security_group.ec2.id
-  description                   = "HTTP from ALB"
+  description                  = "HTTP from ALB"
   referenced_security_group_id = aws_security_group.alb.id
-  ip_protocol                   = "tcp"
-  from_port                     = 80
-  to_port                       = 80
+  ip_protocol                  = "tcp"
+  from_port                    = 80
+  to_port                      = 80
 }
 
 resource "aws_vpc_security_group_egress_rule" "alb_to_ec2" {
   security_group_id            = aws_security_group.alb.id
-  description                   = "HTTP to EC2 targets"
+  description                  = "HTTP to EC2 targets"
   referenced_security_group_id = aws_security_group.ec2.id
-  ip_protocol                   = "tcp"
-  from_port                     = 80
-  to_port                       = 80
+  ip_protocol                  = "tcp"
+  from_port                    = 80
+  to_port                      = 80
 }
 
 # ---------- RDS 用 ----------
@@ -75,11 +75,11 @@ resource "aws_security_group" "rds" {
 
 resource "aws_vpc_security_group_ingress_rule" "ec2_to_rds" {
   security_group_id            = aws_security_group.rds.id
-  description                   = "MySQL from EC2 only"
+  description                  = "MySQL from EC2 only"
   referenced_security_group_id = aws_security_group.ec2.id
-  ip_protocol                   = "tcp"
-  from_port                     = 3306
-  to_port                       = 3306
+  ip_protocol                  = "tcp"
+  from_port                    = 3306
+  to_port                      = 3306
 }
 
 # ---------- EFS 用 ----------
@@ -93,11 +93,11 @@ resource "aws_security_group" "efs" {
 
 resource "aws_vpc_security_group_ingress_rule" "ec2_to_efs" {
   security_group_id            = aws_security_group.efs.id
-  description                   = "NFS from EC2 only"
+  description                  = "NFS from EC2 only"
   referenced_security_group_id = aws_security_group.ec2.id
-  ip_protocol                   = "tcp"
-  from_port                     = 2049
-  to_port                       = 2049
+  ip_protocol                  = "tcp"
+  from_port                    = 2049
+  to_port                      = 2049
 }
 
 # ---------- VPC エンドポイント (Interface) 用 ----------
@@ -111,11 +111,11 @@ resource "aws_security_group" "vpce" {
 
 resource "aws_vpc_security_group_ingress_rule" "ec2_to_vpce" {
   security_group_id            = aws_security_group.vpce.id
-  description                   = "HTTPS from EC2"
+  description                  = "HTTPS from EC2"
   referenced_security_group_id = aws_security_group.ec2.id
-  ip_protocol                   = "tcp"
-  from_port                     = 443
-  to_port                       = 443
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
 }
 
 # RDS/EFS/VPCE はアウトバウンド不要（アプリ側から接続を開始しない）。

@@ -275,7 +275,7 @@ make docs        # modules/*/README.md とこのファイルの表を再生成
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.61.0 |
 
 ## Modules
 
