@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Multi-AZ 3-Tier Architecture - 03 IAM
+  EC2 用ロール / インスタンスプロファイル、AWS Backup 用サービスロール
+
+# ------------------------------------------------------------------
+# 【設計方針】
+# 1. CloudWatchAgentServerPolicy を使う。
+#    CloudWatchAgentAdminPolicy は SSM パラメータストアへの「書き込み」権限を含む
+#    管理者向けポリシーで、メトリクス送信だけの Web サーバーには過剰。
+# 2. Secrets Manager は特定シークレットのみに限定したインラインポリシーで許可する。
+#    リソース指定を "*" にしないこと。
+# 3. EFS は ClientMount / ClientWrite のみに限定し、ClientRootAccess は
+#    付与しない。Resource もこのアカウント・リージョンのEFSに限定する。
+# 4. RoleName はハードコードしない。物理名を固定すると
+#    更新時に置換が必要になった際「同名リソースが既に存在する」で失敗する。
+# ------------------------------------------------------------------
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: myapp
+
+Resources:
+
+  # ---------- EC2 用ロール ----------
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Session Manager 経由の接続に必要
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        # CloudWatch エージェントによるメトリクス・ログ送信に必要
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: read-db-secret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  # RDS のマネージドシークレットは rds!db-xxxx という名前で作られる
+                  - !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!db-*'
+        - PolicyName: efs-client-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !Sub 'arn:${AWS::Partition}:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ec2-role'
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref Ec2Role
+
+  # ---------- AWS Backup 用サービスロール ----------
+  # 参考記事ではこのロールを作らずに ARN だけ参照していたため、
+  # そのままでは Backup が実行できない状態になっていた。
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-backup-role'
+
+Outputs:
+  Ec2RoleArn:
+    Value: !GetAtt Ec2Role.Arn
+    Export:
+      Name: !Sub '${ProjectName}-Ec2RoleArn'
+  Ec2InstanceProfileName:
+    Value: !Ref Ec2InstanceProfile
+    Export:
+      Name: !Sub '${ProjectName}-Ec2InstanceProfileName'
+  BackupRoleArn:
+    Value: !GetAtt BackupRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-BackupRoleArn'

@@ -1,0 +1,280 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Multi-AZ 3-Tier Architecture - 08 Compute
+  Web/App サーバー EC2 x2 (各AZに1台)
+
+# ------------------------------------------------------------------
+# 【設計方針・参考記事からの修正点】
+# 1. UserData は Fn::Base64 でラップする。参考記事はラップしておらず、
+#    さらに中身がコメント1行だけで実質空だった。
+# 2. DB のパスワードを UserData に書かない。
+#    インスタンスプロファイル経由で実行時に Secrets Manager から取得する。
+# 3. MetadataOptions で IMDSv2 を強制する。
+#    UserData は IMDS から読めるため、IMDSv1 が有効だと
+#    アプリの SSRF 脆弱性から認証情報が抜かれる経路になる。
+# 4. EFS は amazon-efs-utils で TLS マウントする。fstab には nofail を付け、
+#    EFS 到達不可時に起動できなくなる事態を避ける。
+# 5. ヒアドキュメントは cat > file << 'EOF' の向きで書く。
+#    参考記事は cat < file（入力リダイレクト）になっており、
+#    ファイルが1つも作成されない状態だった。
+# 6. キーペアは使わない。Session Manager で接続するため不要で、
+#    管理すべき秘密が増えるだけになる。
+# ------------------------------------------------------------------
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: myapp
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: SSM パブリックパラメータから最新の Amazon Linux 2023 AMI を取得する
+
+  RootVolumeSize:
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 100
+
+  EnableDetailedMonitoring:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: EC2の1分間隔詳細モニタリングを有効にする（追加料金あり）
+
+Conditions:
+  UseDetailedMonitoring: !Equals [!Ref EnableDetailedMonitoring, 'true']
+
+Resources:
+
+  WebServerA:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      SubnetId: !ImportValue
+        Fn::Sub: '${ProjectName}-PrivateSubnetAId'
+      SecurityGroupIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-Ec2SgId'
+      IamInstanceProfile: !ImportValue
+        Fn::Sub: '${ProjectName}-Ec2InstanceProfileName'
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+        HttpEndpoint: enabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      Monitoring: !If [UseDetailedMonitoring, true, false]
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            set -euxo pipefail
+
+            EFS_ID="${EfsId}"
+            DB_HOST="${DbHost}"
+            DB_NAME="${DbNameValue}"
+            SECRET_ARN="${SecretArn}"
+            REGION="${AWS::Region}"
+
+            # ---------- パッケージ ----------
+            dnf update -y
+            dnf install -y httpd php php-mysqlnd amazon-efs-utils jq
+
+            # ---------- EFS を TLS マウント ----------
+            mkdir -p /mnt/efs
+            mount -t efs -o tls,iam "$EFS_ID":/ /mnt/efs
+            # nofail を付けないと EFS 到達不可時に起動が止まる
+            echo "$EFS_ID:/ /mnt/efs efs _netdev,tls,iam,nofail 0 0" >> /etc/fstab
+
+            # ---------- Secrets Manager から DB 認証情報を取得 ----------
+            SECRET_JSON=$(aws secretsmanager get-secret-value \
+              --secret-id "$SECRET_ARN" \
+              --query SecretString --output text --region "$REGION")
+            DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
+            DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
+
+            # ---------- アプリ設定（root のみ読み取り可）----------
+            install -d -m 0750 -o root -g apache /etc/app
+            cat > /etc/app/db.php << 'PHPEOF'
+            <?php
+            $dsn  = 'mysql:host=' . getenv('DB_HOST') . ';dbname=' . getenv('DB_NAME') . ';charset=utf8mb4';
+            $user = getenv('DB_USER');
+            $pass = getenv('DB_PASS');
+            PHPEOF
+            chmod 0640 /etc/app/db.php
+            chown root:apache /etc/app/db.php
+
+            # 環境変数は systemd の drop-in で httpd にだけ渡す
+            mkdir -p /etc/systemd/system/httpd.service.d
+            cat > /etc/systemd/system/httpd.service.d/env.conf << ENVEOF
+            [Service]
+            Environment="DB_HOST=$DB_HOST"
+            Environment="DB_NAME=$DB_NAME"
+            Environment="DB_USER=$DB_USER"
+            Environment="DB_PASS=$DB_PASS"
+            ENVEOF
+            chmod 0600 /etc/systemd/system/httpd.service.d/env.conf
+
+            # ---------- ヘルスチェック用ファイル ----------
+            # ALB の HealthCheckPath は URL パス。DocumentRoot 直下に置くこと。
+            cat > /var/www/html/healthcheck.php << 'HCEOF'
+            <?php
+            http_response_code(200);
+            echo "OK";
+            HCEOF
+
+            # ---------- 動作確認用ページ ----------
+            cat > /var/www/html/index.php << 'IDXEOF'
+            <?php
+            echo "<h1>Hello from " . gethostname() . "</h1>";
+            echo "<p>AZ: " . file_get_contents(
+              "http://169.254.169.254/latest/meta-data/placement/availability-zone",
+              false,
+              stream_context_create(["http" => ["header" => "X-aws-ec2-metadata-token: " .
+                file_get_contents("http://169.254.169.254/latest/api/token", false,
+                  stream_context_create(["http" => ["method" => "PUT",
+                    "header" => "X-aws-ec2-metadata-token-ttl-seconds: 60"]]))]])
+            ) . "</p>";
+            IDXEOF
+
+            systemctl daemon-reload
+            systemctl enable --now httpd
+          - EfsId: !ImportValue
+              Fn::Sub: '${ProjectName}-EfsFileSystemId'
+            DbHost: !ImportValue
+              Fn::Sub: '${ProjectName}-DbEndpointAddress'
+            DbNameValue: !ImportValue
+              Fn::Sub: '${ProjectName}-DbName'
+            SecretArn: !ImportValue
+              Fn::Sub: '${ProjectName}-DbSecretArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-web-a'
+        - Key: Backup
+          Value: 'true'
+
+  WebServerB:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      SubnetId: !ImportValue
+        Fn::Sub: '${ProjectName}-PrivateSubnetBId'
+      SecurityGroupIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-Ec2SgId'
+      IamInstanceProfile: !ImportValue
+        Fn::Sub: '${ProjectName}-Ec2InstanceProfileName'
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+        HttpEndpoint: enabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      Monitoring: !If [UseDetailedMonitoring, true, false]
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash
+            set -euxo pipefail
+
+            EFS_ID="${EfsId}"
+            DB_HOST="${DbHost}"
+            DB_NAME="${DbNameValue}"
+            SECRET_ARN="${SecretArn}"
+            REGION="${AWS::Region}"
+
+            dnf update -y
+            dnf install -y httpd php php-mysqlnd amazon-efs-utils jq
+
+            mkdir -p /mnt/efs
+            mount -t efs -o tls,iam "$EFS_ID":/ /mnt/efs
+            echo "$EFS_ID:/ /mnt/efs efs _netdev,tls,iam,nofail 0 0" >> /etc/fstab
+
+            SECRET_JSON=$(aws secretsmanager get-secret-value \
+              --secret-id "$SECRET_ARN" \
+              --query SecretString --output text --region "$REGION")
+            DB_USER=$(echo "$SECRET_JSON" | jq -r .username)
+            DB_PASS=$(echo "$SECRET_JSON" | jq -r .password)
+
+            install -d -m 0750 -o root -g apache /etc/app
+            cat > /etc/app/db.php << 'PHPEOF'
+            <?php
+            $dsn  = 'mysql:host=' . getenv('DB_HOST') . ';dbname=' . getenv('DB_NAME') . ';charset=utf8mb4';
+            $user = getenv('DB_USER');
+            $pass = getenv('DB_PASS');
+            PHPEOF
+            chmod 0640 /etc/app/db.php
+            chown root:apache /etc/app/db.php
+
+            mkdir -p /etc/systemd/system/httpd.service.d
+            cat > /etc/systemd/system/httpd.service.d/env.conf << ENVEOF
+            [Service]
+            Environment="DB_HOST=$DB_HOST"
+            Environment="DB_NAME=$DB_NAME"
+            Environment="DB_USER=$DB_USER"
+            Environment="DB_PASS=$DB_PASS"
+            ENVEOF
+            chmod 0600 /etc/systemd/system/httpd.service.d/env.conf
+
+            cat > /var/www/html/healthcheck.php << 'HCEOF'
+            <?php
+            http_response_code(200);
+            echo "OK";
+            HCEOF
+
+            cat > /var/www/html/index.php << 'IDXEOF'
+            <?php
+            echo "<h1>Hello from " . gethostname() . "</h1>";
+            echo "<p>AZ: " . file_get_contents(
+              "http://169.254.169.254/latest/meta-data/placement/availability-zone",
+              false,
+              stream_context_create(["http" => ["header" => "X-aws-ec2-metadata-token: " .
+                file_get_contents("http://169.254.169.254/latest/api/token", false,
+                  stream_context_create(["http" => ["method" => "PUT",
+                    "header" => "X-aws-ec2-metadata-token-ttl-seconds: 60"]]))]])
+            ) . "</p>";
+            IDXEOF
+
+            systemctl daemon-reload
+            systemctl enable --now httpd
+          - EfsId: !ImportValue
+              Fn::Sub: '${ProjectName}-EfsFileSystemId'
+            DbHost: !ImportValue
+              Fn::Sub: '${ProjectName}-DbEndpointAddress'
+            DbNameValue: !ImportValue
+              Fn::Sub: '${ProjectName}-DbName'
+            SecretArn: !ImportValue
+              Fn::Sub: '${ProjectName}-DbSecretArn'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-web-b'
+        - Key: Backup
+          Value: 'true'
+
+Outputs:
+  WebServerAId:
+    Value: !Ref WebServerA
+    Export:
+      Name: !Sub '${ProjectName}-WebServerAId'
+  WebServerBId:
+    Value: !Ref WebServerB
+    Export:
+      Name: !Sub '${ProjectName}-WebServerBId'

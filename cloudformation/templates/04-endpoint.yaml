@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Multi-AZ 3-Tier Architecture - 04 VPC Endpoint
+  SSM 用 Interface エンドポイント x3 と S3 用 Gateway エンドポイント
+
+# ------------------------------------------------------------------
+# 【設計方針】
+# 1. 踏み台サーバーを置かず Session Manager で接続する。
+#    そのために ssm / ssmmessages / ec2messages の3つが必要。
+#    1つでも欠けるとセッションが確立できない。
+# 2. PrivateDnsEnabled: true にすることで、EC2 は通常のエンドポイント名のまま
+#    VPC 内部経由でアクセスできる。VPC の EnableDnsHostnames が前提。
+# 3. S3 は Gateway 型を使う。Interface 型と違い時間課金もデータ処理料も無料で、
+#    NAT ゲートウェイのデータ処理料（$0.062/GB）を削減できる。
+#    yum/dnf のパッケージ取得は S3 経由なので効果が大きい。
+# ------------------------------------------------------------------
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: myapp
+
+Resources:
+
+  # ---------- SSM (Interface) ----------
+  SsmEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      VpcEndpointType: Interface
+      VpcId: !ImportValue
+        Fn::Sub: '${ProjectName}-VpcId'
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateSubnetAId'
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateSubnetBId'
+      SecurityGroupIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-VpceSgId'
+
+  SsmMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssmmessages'
+      VpcEndpointType: Interface
+      VpcId: !ImportValue
+        Fn::Sub: '${ProjectName}-VpcId'
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateSubnetAId'
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateSubnetBId'
+      SecurityGroupIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-VpceSgId'
+
+  Ec2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2messages'
+      VpcEndpointType: Interface
+      VpcId: !ImportValue
+        Fn::Sub: '${ProjectName}-VpcId'
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateSubnetAId'
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateSubnetBId'
+      SecurityGroupIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-VpceSgId'
+
+  # ---------- S3 (Gateway) ----------
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      VpcId: !ImportValue
+        Fn::Sub: '${ProjectName}-VpcId'
+      RouteTableIds:
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateRouteTableAId'
+        - !ImportValue
+          Fn::Sub: '${ProjectName}-PrivateRouteTableBId'
+
+Outputs:
+  SsmEndpointId:
+    Value: !Ref SsmEndpoint
+    Export:
+      Name: !Sub '${ProjectName}-SsmEndpointId'
+  S3EndpointId:
+    Value: !Ref S3Endpoint
+    Export:
+      Name: !Sub '${ProjectName}-S3EndpointId'

@@ -1,0 +1,37 @@
+name: CloudFormation checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install cfn-lint
+        run: pip install cfn-lint
+
+      - name: Run cfn-lint
+        run: cfn-lint cloudformation/templates/*.yaml
+
+      - name: Reject full-width spaces in templates
+        run: |
+          if grep -rP '\x{3000}' cloudformation/templates/; then
+            echo "::error::CloudFormationテンプレートに全角スペース（U+3000）が含まれています"
+            exit 1
+          fi
+          echo "OK: 全角スペースは含まれていません"
